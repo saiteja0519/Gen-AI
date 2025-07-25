@@ -1,0 +1,14 @@
+from ultralytics import YOLO
+import cv2
+
+model = YOLO("rock(2).pt")
+
+results = model("rock.jpg")
+
+for i, result in enumerate(results):
+    img_with_boxes = result.plot()
+    
+    cv2.imshow("Result", img_with_boxes)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    cv2.imwrite(f"result_{i}.jpg", img_with_boxes)
