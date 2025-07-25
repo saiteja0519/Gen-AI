@@ -1,4 +1,4 @@
-#AIMER Society - Indian Servers
+#AIMER Society - Indian Server
 !pip install pyTelegramBotAPI
 
 #!pip install openai
