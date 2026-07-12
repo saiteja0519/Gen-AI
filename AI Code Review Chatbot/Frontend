@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Review — AI Code Review Agent</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #11161d;
+    --border: #21262d;
+    --text: #e6edf3;
+    --muted: #8b949e;align-self: auto;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --bug: #f0883e;
+    --vuln: #f85149;
+    --style-c: #58a6ff;
+    --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Inter", "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .dot-logo { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .brand h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.2px; }
+  .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    cursor: default;
+  }
+  .status .pulse {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .status.online .pulse { background: var(--ok); box-shadow: 0 0 0 3px rgba(63,185,80,0.15); }
+  .status.offline .pulse { background: var(--vuln); box-shadow: 0 0 0 3px rgba(248,81,73,0.15); }
+
+  .gear {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    width: 30px; height: 30px; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .gear:hover { border-color: var(--accent); color: var(--accent); }
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.2fr);
+    gap: 0;
+    height: calc(100vh - 53px);
+  }
+  @media (max-width: 800px) {
+    main { grid-template-columns: 1fr; height: auto; }
+  }
+
+  .pane { padding: 20px; overflow-y: auto; }
+  .pane.input-pane { border-right: 1px solid var(--border); }
+
+  label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  textarea, input[type=text] {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 12px;
+    resize: vertical;
+  }
+  textarea:focus, input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  textarea#codeInput { height: 340px; margin-top: 8px; }
+
+  .row { display: flex; gap: 10px; margin-top: 12px; }
+  .row input { flex: 1; }
+
+  button.primary {
+    margin-top: 16px;
+    width: 100%;
+    background: var(--accent);
+    color: #0d1117;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 11px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  button.primary:hover { opacity: 0.88; }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .hint code { font-family: var(--mono); background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+
+  .summary-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+
+  .finding {
+    border-left: 3px solid var(--muted);
+    background: var(--panel);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .finding.bug { border-left-color: var(--bug); }
+  .finding.vulnerability { border-left-color: var(--vuln); }
+  .finding.style { border-left-color: var(--style-c); }
+
+  .finding-top {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .badge {
+    padding: 2px 7px; border-radius: 20px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge.category-bug { background: rgba(240,136,62,0.15); color: var(--bug); }
+  .badge.category-vulnerability { background: rgba(248,81,73,0.15); color: var(--vuln); }
+  .badge.category-style { background: rgba(88,166,255,0.15); color: var(--style-c); }
+  .badge.sev-critical, .badge.sev-high { background: rgba(248,81,73,0.15); color: var(--vuln); }
+  .badge.sev-medium { background: rgba(210,153,34,0.15); color: #d29922; }
+  .badge.sev-low { background: rgba(139,148,158,0.15); color: var(--muted); }
+  .line-no { color: var(--muted); }
+
+  .finding p { margin: 4px 0; font-size: 13px; line-height: 1.5; }
+  .finding .suggestion { color: var(--ok); font-family: var(--mono); font-size: 12.5px; }
+
+  .empty-state { color: var(--muted); font-size: 13px; text-align: center; padding: 60px 20px; }
+
+  /* Settings modal */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 22px; width: 380px; max-width: 90vw;
+  }
+  .modal h2 { margin: 0 0 4px; font-size: 14px; }
+  .modal p.desc { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+  .modal-actions button {
+    border-radius: 6px; padding: 8px 14px; font-size: 12.5px; cursor: pointer; border: 1px solid var(--border);
+    background: transparent; color: var(--text);
+  }
+  .modal-actions button.save { background: var(--accent); color: #0d1117; border: none; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="dot-logo"></div>
+    <div>
+      <h1>Review</h1>
+      <div class="sub">AI Code Review Agent</div>
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:14px;">
+    <div class="status offline" id="statusPill">
+      <div class="pulse"></div>
+      <span id="statusText">checking backend…</span>
+    </div>
+    <button class="gear" id="gearBtn" title="Backend settings">⚙</button>
+  </div>
+</header>
+
+<main>
+  <div class="pane input-pane">
+    <label for="codeInput">Code to review</label>
+    <textarea id="codeInput" placeholder="Paste a diff or file contents here…" spellcheck="false"></textarea>
+    <div class="row">
+      <input type="text" id="filenameInput" placeholder="filename.py (optional)" />
+    </div>
+    <button class="primary" id="reviewBtn">Run review</button>
+    <div class="hint">
+      Backend unreachable? Click the <code>⚙</code> icon above and point it at your
+      running FastAPI server (e.g. an ngrok URL if the backend is on Colab).
+    </div>
+  </div>
+
+  <div class="pane" id="resultsPane">
+    <div class="empty-state" id="emptyState">Findings will show up here once you run a review.</div>
+  </div>
+</main>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2>Backend connection</h2>
+    <p class="desc">Point this frontend at your running FastAPI server.</p>
+    <label for="backendUrlInput">Backend URL</label>
+    <input type="text" id="backendUrlInput" placeholder="http://localhost:8000" style="margin-top:6px;" />
+    <div class="modal-actions">
+      <button id="cancelBtn">Cancel</button>
+      <button class="save" id="saveBtn">Save & check</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const STORAGE_KEY = "reviewAgent.backendUrl";
+  const DEFAULT_URL = "http://localhost:8000";
+
+  const els = {
+    statusPill: document.getElementById("statusPill"),
+    statusText: document.getElementById("statusText"),
+    gearBtn: document.getElementById("gearBtn"),
+    overlay: document.getElementById("overlay"),
+    backendUrlInput: document.getElementById("backendUrlInput"),
+    saveBtn: document.getElementById("saveBtn"),
+    cancelBtn: document.getElementById("cancelBtn"),
+    reviewBtn: document.getElementById("reviewBtn"),
+    codeInput: document.getElementById("codeInput"),
+    filenameInput: document.getElementById("filenameInput"),
+    resultsPane: document.getElementById("resultsPane"),
+    emptyState: document.getElementById("emptyState"),
+  };
+
+  function getBackendUrl() {
+    return localStorage.getItem(STORAGE_KEY) || DEFAULT_URL;
+  }
+  function setBackendUrl(url) {
+    localStorage.setItem(STORAGE_KEY, url.replace(/\/+$/, ""));
+  }
+
+  function openSettings() {
+    els.backendUrlInput.value = getBackendUrl();
+    els.overlay.classList.add("open");
+  }
+  function closeSettings() {
+    els.overlay.classList.remove("open");
+  }
+
+  els.gearBtn.addEventListener("click", openSettings);
+  els.cancelBtn.addEventListener("click", closeSettings);
+  els.overlay.addEventListener("click", (e) => { if (e.target === els.overlay) closeSettings(); });
+  els.saveBtn.addEventListener("click", () => {
+    setBackendUrl(els.backendUrlInput.value.trim() || DEFAULT_URL);
+    closeSettings();
+    checkHealth();
+  });
+
+  async function checkHealth() {
+    const url = getBackendUrl();
+    els.statusPill.className = "status";
+    els.statusText.textContent = "checking backend…";
+    try {
+      const res = await fetch(`${url}/api/health`, { method: "GET" });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = await res.json();
+      if (!data.api_key_configured) {
+        els.statusPill.className = "status offline";
+        els.statusText.textContent = "connected, but no API key set on server";
+        return;
+      }
+      els.statusPill.className = "status online";
+      els.statusText.textContent = `connected — ${data.model}`;
+    } catch (err) {
+      els.statusPill.className = "status offline";
+      els.statusText.textContent = `couldn't reach backend (${url})`;
+    }
+  }
+
+  function renderFindings(data) {
+    els.resultsPane.innerHTML = "";
+
+    if (data.summary) {
+      const box = document.createElement("div");
+      box.className = "summary-box";
+      box.textContent = data.summary;
+      els.resultsPane.appendChild(box);
+    }
+
+    if (!data.findings || data.findings.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "No findings — looks clean.";
+      els.resultsPane.appendChild(empty);
+      return;
+    }
+
+    for (const f of data.findings) {
+      const card = document.createElement("div");
+      card.className = `finding ${f.category}`;
+      card.innerHTML = `
+        <div class="finding-top">
+          <span class="badge category-${f.category}">${f.category}</span>
+          <span class="badge sev-${f.severity}">${f.severity}</span>
+          ${f.line != null ? `<span class="line-no">line ${f.line}</span>` : ""}
+        </div>
+        <p>${escapeHtml(f.message)}</p>
+        <p class="suggestion">→ ${escapeHtml(f.suggestion)}</p>
+      `;
+      els.resultsPane.appendChild(card);
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function runReview() {
+    const code = els.codeInput.value.trim();
+    if (!code) return;
+
+    els.reviewBtn.disabled = true;
+    els.reviewBtn.textContent = "Reviewing…";
+    els.resultsPane.innerHTML = `<div class="empty-state">Running review…</div>`;
+
+    const url = getBackendUrl();
+    try {
+      const res = await fetch(`${url}/api/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          filename: els.filenameInput.value.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail || `Request failed with status ${res.status}`);
+      }
+      const data = await res.json();
+      renderFindings(data);
+    } catch (err) {
+      els.resultsPane.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    } finally {
+      els.reviewBtn.disabled = false;
+      els.reviewBtn.textContent = "Run review";
+      checkHealth();
+    }
+  }
+
+  els.reviewBtn.addEventListener("click", runReview);
+
+  // Init
+  checkHealth();
+</script>
+</body>
+</html>
