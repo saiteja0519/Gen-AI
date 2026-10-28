@@ -4,7 +4,7 @@
 #!pip install openai
 !pip install google-generativeai #For Google Gemini #AIMERS
 #!pip install anthropic
-TelegramBOT_TOKEN = '7673934185:AAG9181hpsunRZJjgjJlku0dSb7rX2lktU8'
+TelegramBOT_TOKEN ="Enter your key"
 
 
 #general
